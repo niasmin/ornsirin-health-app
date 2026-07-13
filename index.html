@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ornsirin Health Link</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F6F2EA; --ink:#2B3328; --primary:#4A6741; --primary-dark:#41593A;
+    --clay:#B8763E; --slate:#6E8098; --surface:#FCFAF4; --line:#E3DCCB;
+    --muted:#9AA08F;
+  }
+  html,body{ margin:0; background:#EDE7D8; font-family:'Noto Sans Thai','Noto Serif Thai',sans-serif; color:var(--ink); }
+  .serif-th{ font-family:'Noto Serif Thai',serif; }
+  .phone-scroll::-webkit-scrollbar{ display:none; }
+  @keyframes breathe { 0%,100%{ transform:scale(1); opacity:.55; } 50%{ transform:scale(1.18); opacity:.9; } }
+  @keyframes breathe2 { 0%,100%{ transform:scale(1); opacity:.35; } 50%{ transform:scale(1.32); opacity:.65; } }
+  .listen-ring1{ animation: breathe 3.4s ease-in-out infinite; }
+  .listen-ring2{ animation: breathe2 3.4s ease-in-out infinite; animation-delay:.3s; }
+  @media (prefers-reduced-motion: reduce){ .listen-ring1,.listen-ring2{ animation:none; } }
+  textarea:focus, input:focus { outline: none; }
+</style>
+</head>
+<body class="w-full min-h-screen flex items-start justify-center py-6">
+
+<div id="phone" class="relative overflow-hidden phone-scroll"
+     style="width:390px;height:844px;background:var(--bg);border-radius:40px;
+            box-shadow:0 30px 60px -20px rgba(43,51,40,0.35);border:10px solid #2B3328;">
+  <div id="app" class="w-full h-full overflow-y-auto phone-scroll"></div>
+</div>
+
+<script>
+/* ---------------------------------------------------------------
+   ORNSIRIN HEALTH LINK — vanilla JS single-file prototype
+   Screens: home, consult-specialty, consult-form, queue, lab, meds, lifestyle
+------------------------------------------------------------------*/
+
+const state = {
+  screen: "home",
+  specialty: null,
+  symptom: "",
+  needCert: false,
+  lifestyleTab: "maid",
+};
+
+const specialties = [
+  { id: "psych", name: "จิตแพทย์ / นักจิตวิทยา", sub: "พื้นที่ปลอดภัยสำหรับพูดคุย ไม่ตัดสิน", icon: "brain", featured: true },
+  { id: "gp", name: "แพทย์ทั่วไป", sub: "อาการเบื้องต้น ไข้ ไอ ปวดเมื่อย", icon: "stethoscope" },
+  { id: "internal", name: "อายุรแพทย์", sub: "โรคประจำตัว เบาหวาน ความดัน", icon: "heart-pulse" },
+  { id: "ortho", name: "กระดูกและข้อ", sub: "ปวดหลัง ปวดข้อ อุบัติเหตุเล็กน้อย", icon: "bone" },
+  { id: "eye", name: "จักษุแพทย์", sub: "ตาแดง ตาพร่ามัว", icon: "eye" },
+  { id: "ent", name: "หู คอ จมูก", sub: "คัดจมูก เจ็บคอ", icon: "ear" },
+];
+
+const maidPlans = [
+  { id: "hour", label: "รายชั่วโมง", price: "180", unit: "บาท/ชม.", detail: "ขั้นต่ำ 3 ชม. นัดได้ตามต้องการ" },
+  { id: "day", label: "รายวัน", price: "900", unit: "บาท/วัน", detail: "8 ชม. ทำความสะอาดทั่วบ้าน" },
+  { id: "month", label: "รายเดือน", price: "9,500", unit: "บาท/เดือน", detail: "จันทร์-ศุกร์ 3 ชม./วัน คงที่" },
+];
+
+const massagePartners = [
+  { id: "m1", name: "บ้านสมุนไพรล้านนา", tag: "นวดแผนไทย", price: "500", mins: "60 นาที" },
+  { id: "m2", name: "เจียงใหม่ เวลเนส", tag: "นวดน้ำมันอโรมา", price: "750", mins: "90 นาที" },
+  { id: "m3", name: "สุขใจสปา", tag: "นวดเท้า + ประคบสมุนไพร", price: "450", mins: "60 นาที" },
+];
+
+function setState(patch){ Object.assign(state, patch); render(); }
+function icon(name, size=18, extra=""){ return `<i data-lucide="${name}" style="width:${size}px;height:${size}px" class="${extra}"></i>`; }
+
+function topBar(title, back){
+  return `
+  <div class="flex items-center gap-3 px-5 pt-6 pb-4 sticky top-0 z-20" style="background:var(--bg)">
+    ${back ? `<button data-back class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background:var(--surface);border:1px solid var(--line)">${icon("chevron-left",18)}</button>` : ""}
+    <h1 class="serif-th text-lg font-semibold">${title}</h1>
+  </div>`;
+}
+
+function bottomNav(){
+  const items = [
+    { id:"home", label:"หน้าแรก", icon:"home" },
+    { id:"consult-specialty", label:"ปรึกษาหมอ", icon:"stethoscope" },
+    { id:"lab", label:"เจาะเลือด", icon:"droplet" },
+    { id:"meds", label:"ยาต่อเนื่อง", icon:"pill" },
+    { id:"lifestyle", label:"ไลฟ์สไตล์", icon:"sparkles" },
+  ];
+  const isActive = (id) => id === state.screen || (id === "consult-specialty" && state.screen === "consult-form");
+  return `
+  <div class="absolute bottom-0 left-0 right-0 flex justify-between px-3 py-2.5" style="background:var(--surface);border-top:1px solid var(--line)">
+    ${items.map(it => `
+      <button data-nav="${it.id}" class="flex flex-col items-center gap-1 px-2 py-1 rounded-xl" style="color:${isActive(it.id) ? "var(--primary)" : "var(--muted)"}">
+        ${icon(it.icon, 20)}
+        <span style="font-size:10px">${it.label}</span>
+      </button>
+    `).join("")}
+  </div>`;
+}
+
+/* ---------------- home ---------------- */
+function homeScreen(){
+  const actions = [
+    { id:"consult-specialty", title:"ปรึกษาหมอ", sub:"VDO call คิวด่วน", icon:"stethoscope", bg:"var(--primary)", fg:"#fff" },
+    { id:"lab", title:"เจาะเลือดถึงบ้าน", sub:"ไม่ต้องไป รพ.", icon:"droplet", bg:"var(--slate)", fg:"#fff" },
+    { id:"meds", title:"ส่งยาต่อเนื่อง", sub:"ยาประจำ & ยาสามัญ", icon:"pill", bg:"var(--clay)", fg:"#fff" },
+    { id:"lifestyle", title:"บริการไลฟ์สไตล์", sub:"แม่บ้าน · นวด · Ice bath", icon:"sparkles", bg:"var(--surface)", fg:"var(--ink)", border:true },
+  ];
+  return `
+  <div class="pb-28">
+    <div class="px-6 pt-8 pb-6" style="background:linear-gradient(180deg,#4A6741 0%,#41593A 100%)">
+      <p style="color:#D7E2CC;font-size:13px">สวัสดีตอนเช้า</p>
+      <h1 class="serif-th text-white text-2xl mt-1">คุณสมหญิง สุขใจ</h1>
+      <p style="color:#C7D4BC;font-size:12.5px" class="mt-1">โครงการอรสิริน · Ornsirin Health Link</p>
+      <div class="mt-5 rounded-2xl p-4 flex items-center gap-3" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.18)">
+        ${icon("shield-check",20,"shrink-0")}
+        <p style="color:#E7EFDD;font-size:12.5px;line-height:1.5">ทุกบทสนทนาของคุณเป็นความลับ เราเป็นคนกลางที่พร้อมรับฟังเสมอ</p>
+      </div>
+    </div>
+
+    <div class="px-5 mt-5 grid grid-cols-2 gap-3">
+      ${actions.map(a => `
+        <button data-nav="${a.id}" class="rounded-2xl p-4 text-left flex flex-col justify-between" style="background:${a.bg};color:${a.fg};min-height:118px;${a.border ? "border:1px solid var(--line)" : ""}">
+          ${icon(a.icon,22)}
+          <div>
+            <p class="serif-th font-semibold" style="font-size:14.5px">${a.title}</p>
+            <p style="font-size:11.5px;opacity:.85;margin-top:2px">${a.sub}</p>
+          </div>
+        </button>
+      `).join("")}
+    </div>
+
+    <div class="px-5 mt-6">
+      <p class="serif-th font-semibold mb-2" style="font-size:15px">นัดหมายที่กำลังจะถึง</p>
+      <div class="rounded-2xl p-4 flex items-center gap-3" style="background:var(--surface);border:1px solid var(--line)">
+        <div class="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style="background:#EDE9DA">${icon("droplet",18)}</div>
+        <div class="flex-1">
+          <p style="font-size:13.5px" class="font-medium">เจาะเลือดตรวจสุขภาพประจำปี</p>
+          <p style="font-size:11.5px;color:#7A8271">พฤหัสบดี 16 ก.ค. · 09:00 น. · ที่บ้านเลขที่ 12/4</p>
+        </div>
+        ${icon("chevron-right",16)}
+      </div>
+    </div>
+
+    <div class="px-5 mt-6">
+      <p class="serif-th font-semibold mb-2" style="font-size:15px">บริการไลฟ์สไตล์แนะนำ</p>
+      <div class="flex gap-3 overflow-x-auto phone-scroll pb-1">
+        <div class="rounded-2xl p-4 shrink-0" style="width:160px;background:var(--surface);border:1px solid var(--line)">
+          ${icon("snowflake",18)}
+          <p style="font-size:12.5px" class="mt-2 font-medium">Ice bath ริมสวน</p>
+          <button data-nav="lifestyle" style="font-size:11px;color:var(--primary)" class="mt-2 font-medium">ดูรายละเอียด →</button>
+        </div>
+        <div class="rounded-2xl p-4 shrink-0" style="width:160px;background:var(--surface);border:1px solid var(--line)">
+          ${icon("sparkle",18)}
+          <p style="font-size:12.5px" class="mt-2 font-medium">นวดแผนไทยพาร์ทเนอร์</p>
+          <button data-nav="lifestyle" style="font-size:11px;color:var(--primary)" class="mt-2 font-medium">ดูรายละเอียด →</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------------- consult: specialty select ---------------- */
+function specialtyScreen(){
+  const featured = specialties.filter(s => s.featured);
+  const others = specialties.filter(s => !s.featured);
+  return `
+  <div class="pb-28">
+    ${topBar("เลือกผู้เชี่ยวชาญ", true)}
+    <div class="px-5">
+      <p style="font-size:12.5px;color:#5B6350" class="mb-4 leading-relaxed">
+        เล่าให้เราฟังก่อนว่าอยากปรึกษาเรื่องอะไร เราจะจัดคิวให้คุณกับผู้เชี่ยวชาญที่เหมาะสมที่สุด
+      </p>
+      ${featured.map(s => {
+        const selected = state.specialty === s.id;
+        return `
+        <button data-pick-specialty="${s.id}" class="w-full text-left rounded-2xl p-4 mb-3 flex items-center gap-3" style="background:${selected ? "var(--primary)" : "var(--primary-dark)"};color:#fff">
+          <div class="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style="background:rgba(255,255,255,0.15)">${icon(s.icon,20)}</div>
+          <div class="flex-1">
+            <p class="serif-th font-semibold" style="font-size:14.5px">${s.name}</p>
+            <p style="font-size:11.5px;color:#D7E2CC" class="mt-0.5">${s.sub}</p>
+          </div>
+          ${selected ? icon("check",18) : ""}
+        </button>`;
+      }).join("")}
+
+      <p style="font-size:11.5px;color:var(--muted)" class="mb-2 mt-1">ผู้เชี่ยวชาญด้านอื่น</p>
+      <div class="grid grid-cols-2 gap-2.5">
+        ${others.map(s => {
+          const selected = state.specialty === s.id;
+          return `
+          <button data-pick-specialty="${s.id}" class="text-left rounded-xl p-3" style="background:${selected ? "#EDE9DA" : "var(--surface)"};border:${selected ? "1.5px solid var(--primary)" : "1px solid var(--line)"}">
+            ${icon(s.icon,17)}
+            <p style="font-size:12px" class="font-medium mt-2 leading-tight">${s.name}</p>
+            <p style="font-size:10px;color:#8A9080" class="mt-0.5 leading-tight">${s.sub}</p>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="px-5 mt-6">
+      <button data-next-from-specialty class="w-full rounded-full py-3.5 font-medium flex items-center justify-center gap-2"
+        style="background:${state.specialty ? "var(--clay)" : "#DCD5C2"};color:${state.specialty ? "#fff" : "var(--muted)"};font-size:14px">
+        ถัดไป ${icon("chevron-right",16)}
+      </button>
+    </div>
+  </div>`;
+}
+
+/* ---------------- consult: form ---------------- */
+function consultForm(){
+  const spec = specialties.find(s => s.id === state.specialty);
+  const isPsych = state.specialty === "psych";
+  const canSubmit = state.symptom.trim().length >= 5;
+  return `
+  <div class="pb-28">
+    ${topBar("เล่าอาการของคุณ", true)}
+    <div class="px-5">
+      ${isPsych ? `
+      <div class="rounded-2xl p-5 mb-4 text-center" style="background:var(--primary-dark)">
+        <div class="relative w-16 h-16 mx-auto mb-3 flex items-center justify-center">
+          <span class="absolute inset-0 rounded-full listen-ring2" style="background:#8FAE7F"></span>
+          <span class="absolute inset-1.5 rounded-full listen-ring1" style="background:#A9C79A"></span>
+          <span class="relative w-8 h-8 rounded-full flex items-center justify-center" style="background:#fff">${icon("heart-pulse",16)}</span>
+        </div>
+        <p class="serif-th text-white" style="font-size:14.5px">เราคือคนกลางที่พร้อมรับฟังคุณ</p>
+        <p style="font-size:11.5px;color:#D7E2CC" class="mt-1.5 leading-relaxed">
+          พิมพ์เล่าได้ตามที่คุณสบายใจ ไม่มีคำตอบไหนผิด และทุกอย่างที่คุณเล่าจะถูกเก็บเป็นความลับ
+        </p>
+      </div>` : ""}
+
+      <label style="font-size:12.5px" class="font-medium mb-2 block">${isPsych ? "วันนี้คุณอยากเล่าอะไรให้เราฟัง" : "อาการที่คุณกำลังเผชิญอยู่"}</label>
+      <textarea id="symptom-input" rows="6" maxlength="500" placeholder="${isPsych ? "เช่น ช่วงนี้นอนไม่หลับ รู้สึกกังวลบ่อย ๆ..." : "เช่น มีไข้ 2 วัน ไอ เจ็บคอ..."}"
+        class="w-full rounded-2xl p-4" style="background:var(--surface);border:1px solid var(--line);font-size:13px;resize:none">${state.symptom}</textarea>
+      <div class="flex justify-end mt-1"><span style="font-size:10.5px;color:var(--muted)" id="char-count">${state.symptom.length}/500</span></div>
+
+      <label class="flex items-center gap-3 mt-5 rounded-2xl p-3.5" style="background:var(--surface);border:1px solid var(--line)">
+        <input type="checkbox" id="need-cert" ${state.needCert ? "checked" : ""} class="w-4 h-4" />
+        <div class="flex-1">
+          <p style="font-size:12.5px" class="font-medium">ต้องการใบรับรองแพทย์</p>
+          <p style="font-size:10.5px;color:#8A9080">ค่าบริการเพิ่ม 100 บาท</p>
+        </div>
+      </label>
+
+      <div class="rounded-2xl p-3.5 mt-3 flex items-start gap-2.5" style="background:#EFEAE0">
+        ${icon("info",15,"shrink-0 mt-0.5")}
+        <p style="font-size:10.5px;color:#5B6350;line-height:1.5">
+          หากคุณกำลังอยู่ในภาวะฉุกเฉินหรือเป็นอันตรายต่อตัวเอง กรุณาโทร 1669 หรือสายด่วนสุขภาพจิต 1323 ทันที ระบบนี้ไม่ใช่บริการฉุกเฉิน
+        </p>
+      </div>
+    </div>
+
+    <div class="px-5 mt-6">
+      <button id="submit-consult" ${canSubmit ? "" : "disabled"} class="w-full rounded-full py-3.5 font-medium flex items-center justify-center gap-2"
+        style="background:${canSubmit ? "var(--clay)" : "#DCD5C2"};color:${canSubmit ? "#fff" : "var(--muted)"};font-size:14px">
+        ส่งคำขอปรึกษา ${icon("send",15)}
+      </button>
+    </div>
+  </div>`;
+}
+
+/* ---------------- queue ---------------- */
+function queueScreen(){
+  const price = state.needCert ? 500 : 400;
+  const spec = specialties.find(s => s.id === state.specialty);
+  return `
+  <div class="pb-10 px-5 pt-6">
+    <div class="flex justify-end">
+      <button data-nav="home" class="w-8 h-8 rounded-full flex items-center justify-center" style="background:var(--surface);border:1px solid var(--line)">${icon("x",16)}</button>
+    </div>
+    <div class="text-center mt-2">
+      <div class="w-14 h-14 rounded-full mx-auto flex items-center justify-center" style="background:var(--primary)">${icon("check",24,"")}</div>
+      <h2 class="serif-th mt-4" style="font-size:18px">ส่งคำขอเรียบร้อยแล้ว</h2>
+      <p style="font-size:12.5px;color:#7A8271" class="mt-1">ขอบคุณที่ไว้วางใจเล่าให้เราฟัง ทีมงานกำลังจัดคิวให้คุณ</p>
+    </div>
+
+    <div class="rounded-2xl p-4 mt-6" style="background:var(--surface);border:1px solid var(--line)">
+      <div class="flex items-center justify-between">
+        <span style="font-size:12.5px;color:#5B6350">คิวปัจจุบันของคุณ</span>
+        <span class="serif-th" style="font-size:20px;color:var(--primary)">#3</span>
+      </div>
+      <div class="h-1.5 rounded-full mt-3" style="background:#EDE9DA"><div class="h-1.5 rounded-full" style="width:35%;background:var(--primary)"></div></div>
+      <p style="font-size:11px;color:var(--muted)" class="mt-2">เวลารอโดยประมาณ 12–18 นาที · ${spec ? spec.name : "แพทย์ทั่วไป"}</p>
+    </div>
+
+    <div class="rounded-2xl p-4 mt-3 flex items-center gap-3" style="background:var(--surface);border:1px solid var(--line)">
+      ${icon("qr-code",40)}
+      <div class="flex-1">
+        <p style="font-size:12.5px" class="font-medium">ชำระเงินเพื่อยืนยันคิว</p>
+        <p style="font-size:11px;color:#8A9080">สแกนจ่ายผ่าน QR พร้อมเพย์</p>
+      </div>
+      <p class="serif-th" style="font-size:16px;color:var(--clay)">฿${price}</p>
+    </div>
+
+    <button data-nav="home" class="w-full rounded-full py-3.5 font-medium mt-6" style="background:var(--primary);color:#fff;font-size:14px">กลับหน้าแรก</button>
+  </div>`;
+}
+
+/* ---------------- lab ---------------- */
+const tests = ["ตรวจสุขภาพทั่วไป", "น้ำตาลในเลือด", "ไขมันในเลือด", "การทำงานของตับ-ไต"];
+let pickedTests = [tests[0]];
+function labScreen(){
+  return `
+  <div class="pb-28">
+    ${topBar("เจาะเลือดถึงบ้าน", true)}
+    <div class="px-5">
+      <div class="rounded-2xl p-4 flex items-start gap-3 mb-4" style="background:var(--surface);border:1px solid var(--line)">
+        ${icon("droplet",18,"mt-0.5")}
+        <p style="font-size:11.5px;color:#5B6350;line-height:1.6">เจ้าหน้าที่พยาบาลจะเดินทางมาเจาะเลือดถึงบ้านของคุณ และส่งตรวจแล็บให้ ผลตรวจแจ้งผ่านแอปภายใน 1-2 วัน</p>
+      </div>
+      <p style="font-size:12.5px" class="font-medium mb-2">เลือกรายการตรวจ</p>
+      <div class="space-y-2 mb-4">
+        ${tests.map(t => `
+        <label class="flex items-center gap-3 rounded-xl p-3" style="background:var(--surface);border:1px solid var(--line)">
+          <input type="checkbox" data-test="${t}" ${pickedTests.includes(t) ? "checked" : ""} class="w-4 h-4" />
+          <span style="font-size:12.5px">${t}</span>
+        </label>`).join("")}
+      </div>
+      <p style="font-size:12.5px" class="font-medium mb-2">วันและเวลาที่สะดวก</p>
+      <div class="flex gap-2.5 mb-4">
+        <div class="flex-1 rounded-xl p-3 flex items-center gap-2" style="background:var(--surface);border:1px solid var(--line)">
+          ${icon("calendar",15)}<input type="date" class="bg-transparent outline-none w-full" style="font-size:12px" />
+        </div>
+        <div class="flex-1 rounded-xl p-3 flex items-center gap-2" style="background:var(--surface);border:1px solid var(--line)">
+          ${icon("clock",15)}<input type="time" class="bg-transparent outline-none w-full" style="font-size:12px" />
+        </div>
+      </div>
+      <div class="rounded-xl p-3 flex items-center gap-2.5 mb-6" style="background:var(--surface);border:1px solid var(--line)">
+        ${icon("map-pin",15)}<span style="font-size:12px">บ้านเลขที่ 12/4 โครงการอรสิริน เชียงใหม่</span>
+      </div>
+      <button class="w-full rounded-full py-3.5 font-medium" style="background:var(--slate);color:#fff;font-size:14px">ยืนยันนัดหมาย</button>
+    </div>
+  </div>`;
+}
+
+/* ---------------- meds ---------------- */
+function medsScreen(){
+  const current = [
+    { name: "Metformin 500mg", freq: "วันละ 2 ครั้ง เช้า-เย็น", left: "ยาเหลือ 6 วัน" },
+    { name: "Amlodipine 5mg", freq: "วันละ 1 ครั้ง เช้า", left: "ยาเหลือ 12 วัน" },
+  ];
+  return `
+  <div class="pb-28">
+    ${topBar("ยาต่อเนื่อง", true)}
+    <div class="px-5">
+      <p style="font-size:12.5px" class="font-medium mb-2">ยาประจำของคุณ</p>
+      <div class="space-y-2.5 mb-5">
+        ${current.map(m => `
+        <div class="rounded-2xl p-3.5 flex items-center gap-3" style="background:var(--surface);border:1px solid var(--line)">
+          <div class="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style="background:#F3E9DB">${icon("pill",16)}</div>
+          <div class="flex-1">
+            <p style="font-size:12.5px" class="font-medium">${m.name}</p>
+            <p style="font-size:10.5px;color:#8A9080">${m.freq}</p>
+          </div>
+          <span style="font-size:10px;color:var(--clay)" class="font-medium shrink-0">${m.left}</span>
+        </div>`).join("")}
+      </div>
+      <button class="w-full rounded-full py-3 font-medium mb-6" style="background:var(--surface);color:var(--primary);border:1px solid var(--primary);font-size:13px">+ สั่งซื้อยาสามัญเพิ่มเติม</button>
+      <p style="font-size:12.5px" class="font-medium mb-2">จัดส่งไปที่</p>
+      <div class="rounded-xl p-3 flex items-center gap-2.5 mb-5" style="background:var(--surface);border:1px solid var(--line)">
+        ${icon("map-pin",15)}<span style="font-size:12px">บ้านเลขที่ 12/4 โครงการอรสิริน เชียงใหม่</span>
+      </div>
+      <button class="w-full rounded-full py-3.5 font-medium" style="background:var(--clay);color:#fff;font-size:14px">ยืนยันสั่งซื้อยา</button>
+    </div>
+  </div>`;
+}
+
+/* ---------------- lifestyle ---------------- */
+function lifestyleScreen(){
+  const tabs = [{ id:"maid", label:"แม่บ้าน" }, { id:"massage", label:"นวด" }, { id:"icebath", label:"Ice bath" }];
+  return `
+  <div class="pb-28">
+    ${topBar("บริการไลฟ์สไตล์", true)}
+    <div class="px-5">
+      <div class="flex gap-2 mb-5 rounded-full p-1" style="background:#EDE9DA">
+        ${tabs.map(t => `
+        <button data-tab="${t.id}" class="flex-1 rounded-full py-2 font-medium" style="background:${state.lifestyleTab === t.id ? "var(--primary)" : "transparent"};color:${state.lifestyleTab === t.id ? "#fff" : "#5B6350"};font-size:12.5px">${t.label}</button>
+        `).join("")}
+      </div>
+
+      ${state.lifestyleTab === "maid" ? `
+      <div class="space-y-2.5">
+        ${maidPlans.map(p => `
+        <div class="rounded-2xl p-4 flex items-center gap-3" style="background:var(--surface);border:1px solid var(--line)">
+          <div class="flex-1">
+            <p style="font-size:13px" class="font-medium">แม่บ้าน${p.label}</p>
+            <p style="font-size:10.5px;color:#8A9080" class="mt-0.5">${p.detail}</p>
+          </div>
+          <div class="text-right shrink-0">
+            <p class="serif-th" style="font-size:15px;color:var(--primary)">฿${p.price}</p>
+            <p style="font-size:9.5px;color:var(--muted)">${p.unit}</p>
+          </div>
+        </div>`).join("")}
+        <button class="w-full rounded-full py-3.5 font-medium mt-2" style="background:var(--primary);color:#fff;font-size:14px">จองแม่บ้าน</button>
+      </div>` : ""}
+
+      ${state.lifestyleTab === "massage" ? `
+      <div class="space-y-2.5">
+        <p style="font-size:11px;color:#8A9080" class="mb-1">แพ็กเกจจากพาร์ทเนอร์ร้านนวดท้องถิ่นในเชียงใหม่</p>
+        ${massagePartners.map(m => `
+        <div class="rounded-2xl p-4 flex items-center gap-3" style="background:var(--surface);border:1px solid var(--line)">
+          <div class="w-11 h-11 rounded-full flex items-center justify-center shrink-0" style="background:#F3E9DB">${icon("sparkle",17)}</div>
+          <div class="flex-1">
+            <p style="font-size:12.5px" class="font-medium">${m.name}</p>
+            <p style="font-size:10.5px;color:#8A9080">${m.tag} · ${m.mins}</p>
+          </div>
+          <p class="serif-th shrink-0" style="font-size:14px;color:var(--clay)">฿${m.price}</p>
+        </div>`).join("")}
+      </div>` : ""}
+
+      ${state.lifestyleTab === "icebath" ? `
+      <div>
+        <div class="rounded-2xl p-4 mb-3 flex items-center gap-3" style="background:var(--primary-dark)">
+          ${icon("snowflake",22)}
+          <p style="font-size:12px;color:#E7EFDD;line-height:1.5">Ice bath ริมสวนส่วนกลาง ช่วยฟื้นฟูร่างกายและลดการอักเสบ มีเจ้าหน้าที่ดูแลตลอดเซสชัน</p>
+        </div>
+        <div class="rounded-2xl p-4 flex items-center gap-3" style="background:var(--surface);border:1px solid var(--line)">
+          <div class="flex-1">
+            <p style="font-size:13px" class="font-medium">เซสชันเดี่ยว 15 นาที</p>
+            <p style="font-size:10.5px;color:#8A9080" class="mt-0.5">อุณหภูมิ 10-12°C · มีผ้าเช็ดตัวให้</p>
+          </div>
+          <p class="serif-th shrink-0" style="font-size:15px;color:var(--primary)">฿350</p>
+        </div>
+        <button class="w-full rounded-full py-3.5 font-medium mt-3" style="background:var(--slate);color:#fff;font-size:14px">จองคิว Ice bath</button>
+      </div>` : ""}
+    </div>
+  </div>`;
+}
+
+/* ---------------- render + events ---------------- */
+function render(){
+  const app = document.getElementById("app");
+  let html = "";
+  if (state.screen === "home") html = homeScreen();
+  else if (state.screen === "consult-specialty") html = specialtyScreen();
+  else if (state.screen === "consult-form") html = consultForm();
+  else if (state.screen === "queue") html = queueScreen();
+  else if (state.screen === "lab") html = labScreen();
+  else if (state.screen === "meds") html = medsScreen();
+  else if (state.screen === "lifestyle") html = lifestyleScreen();
+
+  if (state.screen !== "queue") html += bottomNav();
+  app.innerHTML = html;
+
+  // wire up events
+  app.querySelectorAll("[data-nav]").forEach(el => el.addEventListener("click", () => setState({ screen: el.dataset.nav })));
+  const back = app.querySelector("[data-back]");
+  if (back) back.addEventListener("click", () => {
+    if (state.screen === "consult-specialty") setState({ screen: "home" });
+    else if (state.screen === "consult-form") setState({ screen: "consult-specialty" });
+    else setState({ screen: "home" });
+  });
+  app.querySelectorAll("[data-pick-specialty]").forEach(el => el.addEventListener("click", () => setState({ specialty: el.dataset.pickSpecialty })));
+  const nextBtn = app.querySelector("[data-next-from-specialty]");
+  if (nextBtn) nextBtn.addEventListener("click", () => { if (state.specialty) setState({ screen: "consult-form" }); });
+
+  const symptomInput = document.getElementById("symptom-input");
+  if (symptomInput) symptomInput.addEventListener("input", (e) => {
+    state.symptom = e.target.value;
+    document.getElementById("char-count").textContent = `${state.symptom.length}/500`;
+    const submitBtn = document.getElementById("submit-consult");
+    const ok = state.symptom.trim().length >= 5;
+    submitBtn.disabled = !ok;
+    submitBtn.style.background = ok ? "var(--clay)" : "#DCD5C2";
+    submitBtn.style.color = ok ? "#fff" : "var(--muted)";
+  });
+  const needCertBox = document.getElementById("need-cert");
+  if (needCertBox) needCertBox.addEventListener("change", (e) => { state.needCert = e.target.checked; });
+  const submitBtn = document.getElementById("submit-consult");
+  if (submitBtn) submitBtn.addEventListener("click", () => { if (state.symptom.trim().length >= 5) setState({ screen: "queue" }); });
+
+  app.querySelectorAll("[data-test]").forEach(el => el.addEventListener("change", () => {
+    const t = el.dataset.test;
+    pickedTests = pickedTests.includes(t) ? pickedTests.filter(x => x !== t) : [...pickedTests, t];
+  }));
+
+  app.querySelectorAll("[data-tab]").forEach(el => el.addEventListener("click", () => setState({ lifestyleTab: el.dataset.tab })));
+
+  lucide.createIcons();
+}
+
+render();
+</script>
+</body>
+</html>
